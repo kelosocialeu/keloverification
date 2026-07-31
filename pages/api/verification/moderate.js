@@ -1,49 +1,44 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Méthode non autorisée' });
   }
 
-  const moderatorId = req.body.moderator_id;
-  const isModerator = await checkModeratorRole(moderatorId);
-  if (!isModerator) {
-    return res.status(403).json({ error: 'Accès réservé à la modération.' });
+  // Vérification basique pour s'assurer que seul un admin peut utiliser cette route
+  const adminSecret = req.headers['x-admin-secret'];
+  if (adminSecret !== process.env.ADMIN_SECRET) {
+    return res.status(401).json({ error: 'Accès non autorisé' });
   }
 
-  const { request_id, decision, notes } = req.body;
+  // action doit être soit 'approved', soit 'rejected'
+  const { requestId, action } = req.body; 
 
-  if (!request_id || !['approve', 'reject'].includes(decision)) {
-    return res.status(400).json({ error: 'Paramètres invalides.' });
+  if (!requestId || !['approved', 'rejected'].includes(action)) {
+    return res.status(400).json({ error: 'Paramètres invalides' });
   }
 
-  const fn = decision === 'approve' ? 'approve_verification' : 'reject_verification';
+  try {
+    // Mise à jour du statut de la demande dans la base de données
+    const { error } = await supabase
+      .from('verification_requests')
+      .update({ 
+        status: action, 
+        updated_at: new Date().toISOString() 
+      })
+      .eq('id', requestId);
 
-  const { error } = await supabaseAdmin.rpc(fn, {
-    request_id,
-    moderator_id: moderatorId,
-    notes: notes || null,
-  });
+    if (error) throw error;
 
-  if (error) {
-    console.error('Erreur modération:', error);
-    return res.status(500).json({ error: error.message });
+    // Si 'approved', tu peux déclencher ici l'attribution du badge sur Kelo Social
+
+    return res.status(200).json({ success: true, message: `Demande modifiée en : ${action}` });
+  } catch (error) {
+    console.error('Erreur DB:', error);
+    return res.status(500).json({ error: 'Erreur lors de la mise à jour.' });
   }
-
-  return res.status(200).json({ message: `Demande ${decision === 'approve' ? 'approuvée' : 'rejetée'}.` });
-}
-
-async function checkModeratorRole(moderatorId) {
-  if (!moderatorId) return false;
-  const { data } = await supabaseAdmin
-    .from('profiles')
-    .select('role')
-    .eq('user_id', moderatorId)
-    .single();
-  return data?.role === 'moderator';
 }
