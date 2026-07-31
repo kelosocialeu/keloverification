@@ -1,9 +1,10 @@
 import { useState } from 'react';
+import { supabase } from '../lib/supabase';
 
 export default function VerificationForm() {
   const [username, setUsername] = useState('');
   const [consent, setConsent] = useState(false);
-  const [status, setStatus] = useState('idle'); // idle, loading, success, error
+  const [status, setStatus] = useState('idle');
   const [message, setMessage] = useState('');
 
   const handleSubmit = async (e) => {
@@ -11,24 +12,23 @@ export default function VerificationForm() {
     setStatus('loading');
 
     try {
-      const response = await fetch('/api/verification/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, consent }),
-      });
+      // Envoi DIRECT à Supabase sans passer par une API
+      const { error } = await supabase
+        .from('verification_requests')
+        .insert([{ 
+          wsocial_username: username, 
+          consent_given: consent,
+          status: 'pending'
+        }]);
 
-      const data = await response.json();
+      if (error) throw error;
 
-      if (response.ok) {
-        setStatus('success');
-        setMessage('Votre demande a été envoyée. L\'équipe Kelo Social va vérifier votre compte W Social sous 24h.');
-      } else {
-        setStatus('error');
-        setMessage(data.error || 'Une erreur est survenue.');
-      }
+      setStatus('success');
+      setMessage('Votre demande a été envoyée. L\'équipe Kelo Social va vérifier votre compte W Social sous 24h.');
     } catch (error) {
+      console.error(error);
       setStatus('error');
-      setMessage('Impossible de se connecter au serveur.');
+      setMessage('Erreur lors de l\'envoi de la demande.');
     }
   };
 
@@ -55,7 +55,7 @@ export default function VerificationForm() {
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           placeholder="Ex: mon_pseudo"
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-gray-300 rounded-md"
           required
         />
       </div>
@@ -66,27 +66,21 @@ export default function VerificationForm() {
             type="checkbox"
             checked={consent}
             onChange={(e) => setConsent(e.target.checked)}
-            className="mt-1 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+            className="mt-1 h-4 w-4 text-blue-600 border-gray-300 rounded"
             required
           />
           <span className="ml-2 text-sm text-gray-600">
-            J'accepte que l'équipe de Kelo Social consulte publiquement mon profil W Social afin de vérifier la présence de mon badge d'identité.
+            J'accepte que l'équipe de Kelo Social consulte mon profil W Social pour vérifier mon identité.
           </span>
         </label>
       </div>
 
-      {status === 'error' && (
-        <div className="mb-4 text-sm text-red-600 bg-red-50 p-3 rounded border border-red-100">
-          {message}
-        </div>
-      )}
-
       <button
         type="submit"
         disabled={status === 'loading' || !consent || !username}
-        className="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        className="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50"
       >
-        {status === 'loading' ? 'Envoi en cours...' : 'Demander la vérification'}
+        {status === 'loading' ? 'Envoi en cours...' : 'Soumettre'}
       </button>
     </form>
   );
